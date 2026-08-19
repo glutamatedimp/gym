@@ -113,6 +113,13 @@ textarea#exp{width:100%;min-height:200px;background:var(--bg);color:var(--txt);b
 .screen{display:none}
 .screen.on{display:block}
 label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
+.restbar{position:fixed;left:0;right:0;bottom:112px;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:8px;
+  padding:8px 12px;background:#151922;border:1px solid var(--acc);border-radius:12px;z-index:25;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+.restbar #resttime{flex:1;font-weight:800;font-size:16px;color:var(--acc);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.restbar .mini{flex:none}
+.restbar.flash{animation:rflash .5s ease 4}
+.restbar.flash #resttime{color:#06210f}
+@keyframes rflash{0%,100%{background:#151922}50%{background:var(--acc)}}
 </style>
 </head>
 <body>
@@ -123,6 +130,15 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
     <div class="row" id="splits"></div>
     <div id="list"></div>
     <div id="sessnotes"></div>
+  </div>
+
+  <div class="screen" id="s-prog">
+    <h1>Progress</h1>
+    <div class="sub">Personal bests &amp; trends from your logged history.</div>
+    <div id="bwbox"></div>
+    <h2>By exercise</h2>
+    <select class="field" id="exsel" onchange="renderExProgress()"></select>
+    <div id="progbody"></div>
   </div>
 
   <div class="screen" id="s-hist">
@@ -143,6 +159,12 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
   </div>
 </div>
 
+<div class="restbar" id="restbar" style="display:none">
+  <span id="resttime">Rest</span>
+  <button class="mini" onclick="restAdjust(-15)">-15</button>
+  <button class="mini" onclick="restAdjust(15)">+15</button>
+  <button class="mini" onclick="restStop()">Skip</button>
+</div>
 <div class="actionbar" id="actionbar" style="display:none">
   <button class="ghost" onclick="discardSession()">Discard</button>
   <button class="go" onclick="finishSession()">Finish &amp; save</button>
@@ -150,6 +172,7 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
 
 <div class="bar"><div class="nav" id="nav">
   <button class="on" data-s="log" onclick="tab('log')"><span class="ic">&#128221;</span>Log</button>
+  <button data-s="prog" onclick="tab('prog')"><span class="ic">&#128200;</span>Progress</button>
   <button data-s="hist" onclick="tab('hist')"><span class="ic">&#128336;</span>History</button>
   <button data-s="back" onclick="tab('back')"><span class="ic">&#9729;</span>Backup</button>
 </div></div>
@@ -166,7 +189,7 @@ const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
 let DB=loadDB();
-if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};
+migrateDB();
 let CAT=null;              // derived catalog cache
 let active=DB.active||null;
 let split=active?active.split:null;
@@ -181,11 +204,12 @@ function loadDB(){
     (SEED.history[sp]||[]).forEach(s=>hist[sp].push(
       {date:s.date,split:sp,exercises:s.exercises.map(cloneEx),notes:'',synced:true,src:'seed'}));
   });
-  return {history:hist,bodyweight:[],hidden:{Upper:[],Lower:[]},active:null,seededAt:SEED.generated};
+  return {history:hist,bodyweight:[],hidden:{Upper:[],Lower:[]},settings:{restDefault:120,restAuto:true,restByExercise:{}},routines:[],active:null,seededAt:SEED.generated};
 }
 function cloneEx(e){return {name:e.name,equipment:e.equipment,
   sets:(e.sets||[]).map(s=>({reps:s.reps,weight:s.weight})),remarks:e.remarks||''}}
 function saveDB(){DB.active=active;localStorage.setItem(KEY,JSON.stringify(DB));CAT=null}
+function migrateDB(){if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};if(!DB.settings)DB.settings={restDefault:120,restAuto:true,restByExercise:{}};if(!DB.routines)DB.routines=[];if(!DB.bodyweight)DB.bodyweight=[]}
 function num(v){return (v===''||v==null)?null:(isNaN(+v)?v:+v)}
 function today(){return new Date().toLocaleDateString('en-CA')}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');
@@ -309,9 +333,10 @@ function recommend(sp,name){
 }
 
 /* ================= navigation ================= */
-function tab(s){['log','hist','back'].forEach(x=>{
+function tab(s){['log','prog','hist','back'].forEach(x=>{
   $('s-'+x).classList.toggle('on',x===s);});
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
+  if(s==='prog')renderProgress();
   if(s==='hist')renderHistory();
   if(s==='back')renderBackup();
   window.scrollTo(0,0);
@@ -324,21 +349,27 @@ function renderSplits(){
     b.className='split-btn'+(sp===split?' on':'');b.textContent=sp;b.onclick=()=>chooseSplit(sp);el.appendChild(b)});
 }
 function chooseSplit(sp){
+  if(active&&active.split===sp){split=sp;renderSplits();renderList();renderNotes();showLogging();return;}
   if(active&&active.split!==sp&&active.dirty){
-    askConfirm('Discard your in-progress '+active.split+' session?',()=>doChooseSplit(sp),'Discard');return;}
-  doChooseSplit(sp);
+    askConfirm('Discard your in-progress '+active.split+' session?',()=>startSplit(sp),'Discard');return;}
+  startSplit(sp);
 }
-function doChooseSplit(sp){
+function startSplit(sp){const rts=DB.routines.filter(r=>r.split===sp);
+  if(rts.length){openStartChooser(sp,rts);return;}
+  doChooseSplit(sp,null);}
+function doChooseSplit(sp,mode){
   split=sp;
-  if(!active||active.split!==sp){
-    active={split:sp,date:today(),exercises:[],notes:''};
-    const last=DB.history[sp][0];
-    if(last){last.exercises.forEach(ex=>addExercise(ex.name,false));
-      active.exercises.sort((a,b)=>orderRank(a.name)-orderRank(b.name));}
-    saveDB();
-  }
-  renderSplits();renderList();renderNotes();$('actionbar').style.display='flex';document.body.classList.add('logging');
+  active={split:sp,date:today(),exercises:[],notes:''};
+  let names;
+  if(mode==='empty')names=[];
+  else if(Array.isArray(mode))names=mode;
+  else{const last=DB.history[sp][0];names=last?last.exercises.map(e=>e.name):[]}
+  names.forEach(n=>addExercise(n,false));
+  if(mode==null)active.exercises.sort((a,b)=>orderRank(a.name)-orderRank(b.name));
+  saveDB();
+  renderSplits();renderList();renderNotes();showLogging();
 }
+function showLogging(){$('actionbar').style.display='flex';document.body.classList.add('logging')}
 function addExercise(name,doSave){
   const c=lookup(split,name)||lookupAny(name),rec=recommend(split,name);
   active.exercises.push({name,equipment:c?c.equipment:'',
@@ -352,6 +383,9 @@ function renderList(){
   active.exercises.forEach((ex,i)=>el.appendChild(card(ex,i)));
   const add=document.createElement('button');add.className='add';add.textContent='+ Add exercise';
   add.onclick=()=>openPicker();el.appendChild(add);
+  const tools=document.createElement('div');tools.className='acts';tools.style.marginTop='6px';
+  tools.innerHTML='<button class="mini" onclick="saveAsRoutine()">\u2605 Save as routine</button><button class="mini" onclick="openRoutines()">\u2630 Routines</button>';
+  el.appendChild(tools);
 }
 function renderNotes(){
   if(!split){$('sessnotes').innerHTML='';return}
@@ -382,7 +416,7 @@ function card(ex,i){
     '<input class="field" style="flex:2;min-width:120px;padding:8px" placeholder="remarks (grip, tempo...)" value="'+(ex.remarks||'').replace(/"/g,'&quot;')+'" onchange="active.exercises['+i+'].remarks=this.value;active.dirty=true;saveDB()"></div>';
   return d;
 }
-function toggleDone(i,si){const s=active.exercises[i].sets[si];s.done=!s.done;touch();saveDB();renderList()}
+function toggleDone(i,si){const s=active.exercises[i].sets[si];s.done=!s.done;touch();saveDB();renderList();if(s.done&&DB.settings.restAuto){ensureAudio();restStart(active.exercises[i].name)}}
 function upd(i,si,f,v){active.exercises[i].sets[si][f]=num(v);touch();saveDB()}
 function delSet(i,si){const s=active.exercises[i].sets;if(s.length<=1){toast('Keep at least 1 set');return}
   s.splice(si,1);touch();saveDB();renderList()}
@@ -482,12 +516,12 @@ function finishSession(){
   if(!clean.exercises.length){toast('Add reps/weight first');return}
   DB.history[active.split].unshift(clean);   // newest first
   active=null;split=null;saveDB();
-  renderSplits();renderList();renderNotes();$('actionbar').style.display='none';document.body.classList.remove('logging');
+  renderSplits();renderList();renderNotes();$('actionbar').style.display='none';document.body.classList.remove('logging');restStop();
   toast('Saved \u2713  '+clean.exercises.length+' exercises logged');
   openExport(clean);
 }
 function discardSession(){if(active&&active.dirty){askConfirm('Discard this session? Nothing will be saved.',doDiscard,'Discard');return}doDiscard()}
-function doDiscard(){active=null;split=null;saveDB();renderSplits();renderList();renderNotes();$('actionbar').style.display='none';document.body.classList.remove('logging')}
+function doDiscard(){active=null;split=null;saveDB();renderSplits();renderList();renderNotes();$('actionbar').style.display='none';document.body.classList.remove('logging');restStop()}
 
 /* ================= PROGRESS ================= */
 function allExerciseNames(){const s=new Set();['Upper','Lower'].forEach(sp=>DB.history[sp].forEach(se=>se.exercises.forEach(e=>s.add(e.name))));
@@ -592,6 +626,12 @@ function renderBackup(){
    '<small class="note">Tap below, then send the text to Claude with \u201csync my gym log\u201d. Claude appends them into Gym Schedule.xlsx (Upper/Lower). Then mark them synced.</small>'+
    '<button class="go" style="width:100%" onclick="openExport()">Copy '+(u||'')+' session'+(u===1?'':'s')+' for Claude</button>'+
    '<button class="ghost" style="width:100%;margin-top:8px" onclick="markSynced()">Mark all as synced</button>'+
+   '<h2>Rest timer</h2>'+
+   '<div class="setline"><span style="flex:1">Auto-start when a set is ticked done</span>'+
+   '<button class="mini" onclick="toggleRestAuto()">'+(DB.settings.restAuto?'On':'Off')+'</button></div>'+
+   '<div class="setline" style="margin-top:8px"><span style="flex:1">Default rest length</span>'+
+   '<input class="inp" id="restdefin" inputmode="numeric" style="flex:none;width:78px" value="'+DB.settings.restDefault+'"><span class="unit">s</span>'+
+   '<button class="go" style="flex:none;padding:10px 14px" onclick="saveRestDefault()">Set</button></div>'+
    '<h2>Full backup</h2>'+
    '<small class="note">Saves everything (history, bodyweight, notes) to a file. Keep it somewhere safe \u2013 your data lives only on this device.</small>'+
    '<button class="ghost" style="width:100%" onclick="exportBackup()">\u2b07 Download full backup (.json)</button>'+
@@ -639,11 +679,81 @@ function mergeImport(d){
     DB.history[sp].sort((a,b)=>a.date<b.date?1:-1);});
     if(d.bodyweight)d.bodyweight.forEach(b=>{if(!DB.bodyweight.some(x=>x.date===b.date&&x.kg===b.kg))DB.bodyweight.push(b)});
     DB.bodyweight.sort((a,b)=>a.date<b.date?-1:1);
+    if(d.routines)d.routines.forEach(r=>{if(!DB.routines.some(x=>x.id===r.id||(x.name===r.name&&x.split===r.split)))DB.routines.push(r)});
+    if(d.settings)DB.settings=Object.assign({restDefault:120,restAuto:true,restByExercise:{}},DB.settings||{},d.settings);
+    if(d.hidden)['Upper','Lower'].forEach(sp=>{(d.hidden[sp]||[]).forEach(n=>{DB.hidden[sp]=DB.hidden[sp]||[];if(DB.hidden[sp].indexOf(n)<0)DB.hidden[sp].push(n)})});
     saveDB();renderBackup();toast('Imported '+added+' new sessions')}
   else toast('Not a valid backup')}
 function resetAll(){askConfirm('Reset wipes app-logged sessions and reloads the spreadsheet seed. Export a backup first! Continue?',()=>{
-  localStorage.removeItem(KEY);DB=loadDB();if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};active=null;split=null;CAT=null;
+  localStorage.removeItem(KEY);DB=loadDB();migrateDB();restStop();active=null;split=null;CAT=null;
   renderSplits();renderList();renderNotes();renderBackup();$('actionbar').style.display='none';toast('Reset to seed')},'Reset')}
+
+/* ================= rest timer ================= */
+let restEndsAt=null,restTO=null,restName='',audioCtx=null;
+function ensureAudio(){try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;
+  if(!audioCtx)audioCtx=new A();if(audioCtx.state==='suspended')audioCtx.resume();}catch(e){}}
+function beep(){try{if(!audioCtx)return;const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.connect(g);g.connect(audioCtx.destination);o.type='sine';o.frequency.value=880;const t=audioCtx.currentTime;
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.4);o.start(t);o.stop(t+0.42);}catch(e){}}
+function fmtT(s){s=Math.max(0,s);return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)}
+function restDur(name){const s=DB.settings;if(s.restByExercise&&s.restByExercise[name]!=null)return s.restByExercise[name];return s.restDefault||120}
+function restStart(name){restName=name||'';restEndsAt=Date.now()+restDur(name)*1000;
+  const b=$('restbar');b.style.display='flex';b.classList.remove('flash');restTick()}
+function restTick(){if(restEndsAt==null)return;const rem=Math.round((restEndsAt-Date.now())/1000);
+  if(rem<=0){restDone();return}
+  $('resttime').textContent='Rest '+fmtT(rem)+(restName?' · '+restName:'');
+  clearTimeout(restTO);restTO=setTimeout(restTick,250)}
+function restAdjust(d){if(restEndsAt==null)return;restEndsAt+=d*1000;if(restEndsAt<Date.now())restEndsAt=Date.now();restTick()}
+function restStop(){restEndsAt=null;clearTimeout(restTO);const b=$('restbar');if(b){b.style.display='none';b.classList.remove('flash')}}
+function restDone(){restEndsAt=null;clearTimeout(restTO);const b=$('restbar');
+  $('resttime').textContent='Rest done'+(restName?' · '+restName:'');b.classList.add('flash');
+  try{if(navigator.vibrate)navigator.vibrate([180,90,180])}catch(e){}beep();
+  clearTimeout(b._h);b._h=setTimeout(()=>{if(restEndsAt==null){b.style.display='none';b.classList.remove('flash')}},5000)}
+
+/* ================= settings ================= */
+function toggleRestAuto(){DB.settings.restAuto=!DB.settings.restAuto;saveDB();renderBackup()}
+function saveRestDefault(){const v=parseInt($('restdefin').value,10);
+  if(v>=10&&v<=600){DB.settings.restDefault=v;saveDB();toast('Rest default '+v+'s')}else toast('Enter 10–600')}
+
+/* ================= in-app text prompt ================= */
+function promptText(title,def,cb){window._pt=cb;
+  const h='<h3>'+title+'</h3><input class="field" id="ptin" value="'+String(def||'').replace(/"/g,'&quot;')+'" style="margin:8px 0">'+
+   '<div class="acts"><button class="ghost" onclick="closeModal()">Cancel</button><button class="go" onclick="_ptOk()">Save</button></div>';
+  showModal(h);setTimeout(()=>{const el=$('ptin');if(el){el.focus();try{el.select()}catch(e){}}},60)}
+function _ptOk(){const el=$('ptin');const v=el?el.value:'';const cb=window._pt;window._pt=null;closeModal();if(cb)cb(v)}
+
+/* ================= routines ================= */
+function suggestRoutineName(){const n=DB.routines.filter(r=>r.split===active.split).length;
+  return active.split+' '+String.fromCharCode(65+Math.min(n,25))}
+function saveAsRoutine(){if(!active||!active.exercises.length){toast('Nothing to save');return}
+  promptText('Name this routine',suggestRoutineName(),nm=>{nm=(nm||'').trim();if(!nm)return;
+    const ex=active.exercises.map(e=>({name:e.name}));
+    const ex0=DB.routines.find(r=>r.split===active.split&&r.name.toLowerCase()===nm.toLowerCase());
+    if(ex0){askConfirm('A '+active.split+' routine "'+ex0.name+'" already exists. Overwrite it?',()=>{ex0.exercises=ex;ex0.name=nm;saveDB();toast('Updated "'+nm+'"')},'Overwrite');return}
+    DB.routines.push({id:'r'+Date.now(),name:nm,split:active.split,exercises:ex,created:today()});
+    saveDB();toast('Saved routine "'+nm+'"')})}
+function openRoutines(){let h='<h3>Routines</h3><small class="note">Pick one when you start a split. Build a routine by logging a session and tapping “Save as routine”.</small><div class="pick">';
+  if(!DB.routines.length)h+='<p class="empty">No routines yet.</p>';
+  DB.routines.forEach(r=>{h+='<div class="setline" style="margin-top:8px">'+
+    '<span style="flex:2;min-width:0"><b>'+r.name+'</b> <span class="eqp">'+r.split+' · '+r.exercises.length+'</span></span>'+
+    '<button class="mini" onclick="renameRoutine(\''+r.id+'\')">Rename</button>'+
+    '<button class="setdel" onclick="delRoutine(\''+r.id+'\')">&times;</button></div>'});
+  h+='</div><button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>';showModal(h)}
+function renameRoutine(id){const r=DB.routines.find(x=>x.id===id);if(!r)return;
+  promptText('Rename routine',r.name,v=>{if(v&&v.trim()){r.name=v.trim();saveDB();openRoutines()}})}
+function delRoutine(id){const r=DB.routines.find(x=>x.id===id);if(!r)return;
+  askConfirm('Delete routine "'+r.name+'"?',()=>{DB.routines=DB.routines.filter(x=>x.id!==id);saveDB();openRoutines();toast('Deleted')},'Delete')}
+function openStartChooser(sp,rts){
+  let h='<h3>Start '+sp+'</h3><small class="note">Pick a routine, repeat your last session, or start empty.</small><div class="pick">';
+  rts.forEach(r=>{h+='<div class="pickrow" onclick="startFromRoutine(\''+r.id+'\')"><div><div class="exname">'+r.name+'</div><span class="eqp">'+r.exercises.length+' exercises</span></div><span class="tag">routine</span></div>'});
+  const last=DB.history[sp][0];
+  h+='<div class="pickrow" onclick="closeModal();doChooseSplit(\''+sp+'\',null)"><div class="exname">Last session</div><span class="tag">'+(last?relDate(last.date):'none')+'</span></div>';
+  h+='<div class="pickrow" onclick="closeModal();doChooseSplit(\''+sp+'\',\'empty\')"><div class="exname">Empty</div><span class="tag">blank</span></div>';
+  h+='</div><button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>';showModal(h)}
+function startFromRoutine(id){const r=DB.routines.find(x=>x.id===id);closeModal();if(!r)return;
+  doChooseSplit(r.split,r.exercises.map(e=>e.name));toast('Started '+r.name)}
+
 
 /* ================= modal ================= */
 function showModal(h){$('sheetc').innerHTML=h;$('modal').classList.add('on')}
