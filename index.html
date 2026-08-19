@@ -132,15 +132,6 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
     <div id="sessnotes"></div>
   </div>
 
-  <div class="screen" id="s-prog">
-    <h1>Progress</h1>
-    <div class="sub">Personal bests &amp; trends from your logged history.</div>
-    <div id="bwbox"></div>
-    <h2>By exercise</h2>
-    <select class="field" id="exsel" onchange="renderExProgress()"></select>
-    <div id="progbody"></div>
-  </div>
-
   <div class="screen" id="s-hist">
     <h1>History</h1>
     <div class="sub" id="histsub"></div>
@@ -172,7 +163,6 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
 
 <div class="bar"><div class="nav" id="nav">
   <button class="on" data-s="log" onclick="tab('log')"><span class="ic">&#128221;</span>Log</button>
-  <button data-s="prog" onclick="tab('prog')"><span class="ic">&#128200;</span>Progress</button>
   <button data-s="hist" onclick="tab('hist')"><span class="ic">&#128336;</span>History</button>
   <button data-s="back" onclick="tab('back')"><span class="ic">&#9729;</span>Backup</button>
 </div></div>
@@ -188,6 +178,8 @@ window.SEED = {"splits":["Upper","Lower"],"generated":"2026-08-18","history":{"U
 const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
+const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press"},{name:"Lat Pulldown"},{name:"Pec Deck"},{name:"Chest-Supported Row"},{name:"Cross Body Y-Raise"},{name:"Tricep Press-down"},{name:"Bayesian Curl"}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump"},{name:"Kettlebell Swing"},{name:"Depth Jump"},{name:"Leg Press"},{name:"Leg Curl"},{name:"Hip Thrust"},{name:"Calf Raise"},{name:"Hip Abductor"}],created:'2026-08-19'}];
+function seedDefaultRoutines(){if(DB.routinesSeeded)return;DEFAULT_ROUTINES.forEach(r=>{if(!DB.routines.some(x=>x.split===r.split&&x.name.toLowerCase()===r.name.toLowerCase()))DB.routines.push(JSON.parse(JSON.stringify(r)))});DB.routinesSeeded=true;saveDB()}
 let DB=loadDB();
 migrateDB();
 let CAT=null;              // derived catalog cache
@@ -333,10 +325,9 @@ function recommend(sp,name){
 }
 
 /* ================= navigation ================= */
-function tab(s){['log','prog','hist','back'].forEach(x=>{
+function tab(s){['log','hist','back'].forEach(x=>{
   $('s-'+x).classList.toggle('on',x===s);});
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.s===s));
-  if(s==='prog')renderProgress();
   if(s==='hist')renderHistory();
   if(s==='back')renderBackup();
   window.scrollTo(0,0);
@@ -685,7 +676,7 @@ function mergeImport(d){
     saveDB();renderBackup();toast('Imported '+added+' new sessions')}
   else toast('Not a valid backup')}
 function resetAll(){askConfirm('Reset wipes app-logged sessions and reloads the spreadsheet seed. Export a backup first! Continue?',()=>{
-  localStorage.removeItem(KEY);DB=loadDB();migrateDB();restStop();active=null;split=null;CAT=null;
+  localStorage.removeItem(KEY);DB=loadDB();migrateDB();active=null;split=null;CAT=null;seedDefaultRoutines();restStop();
   renderSplits();renderList();renderNotes();renderBackup();$('actionbar').style.display='none';toast('Reset to seed')},'Reset')}
 
 /* ================= rest timer ================= */
@@ -767,6 +758,7 @@ function _confCancel(){const f=window._cn;window._cy=window._cn=null;closeModal(
 $('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
 
 /* ================= boot ================= */
+seedDefaultRoutines();
 renderSplits();
 if(active&&active.split){split=active.split;renderList();renderNotes();$('actionbar').style.display='flex';document.body.classList.add('logging');}
 else renderList();
