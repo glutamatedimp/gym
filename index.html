@@ -613,9 +613,9 @@ function renderBackup(){
   $('backbody').innerHTML=
    '<div class="kpi"><div class="kpibox"><div class="n">'+total+'</div><div class="l">sessions stored</div></div>'+
    '<div class="kpibox"><div class="n" style="color:'+(u?'var(--warn)':'var(--acc)')+'">'+u+'</div><div class="l">not yet in spreadsheet</div></div></div>'+
-   '<h2>Get sessions into your spreadsheet</h2>'+
-   '<small class="note">Tap below, then send the text to Claude with \u201csync my gym log\u201d. Claude appends them into Gym Schedule.xlsx (Upper/Lower). Then mark them synced.</small>'+
-   '<button class="go" style="width:100%" onclick="openExport()">Copy '+(u||'')+' session'+(u===1?'':'s')+' for Claude</button>'+
+   '<h2>Send workouts to your spreadsheet</h2>'+
+   '<small class="note">Tap to send unsynced sessions to your WhatsApp (message yourself). They auto-sync into Gym Schedule.xlsx every Sunday 7pm.</small>'+
+   '<button class="go" style="width:100%" onclick="openExport()">Send '+(u||'')+' session'+(u===1?'':'s')+' to WhatsApp</button>'+
    '<button class="ghost" style="width:100%;margin-top:8px" onclick="markSynced()">Mark all as synced</button>'+
    '<h2>Rest timer</h2>'+
    '<div class="setline"><span style="flex:1">Auto-start when a set is ticked done</span>'+
@@ -640,18 +640,26 @@ function fmtSession(s){
     (s.notes?'\n  notes: '+s.notes:'');
   return read;
 }
+const GYM_MARKER='\ud83c\udfcb\ufe0f';
 function openExport(one){
   const list=one?[one]:unsynced();
-  const readable=list.length?list.map(fmtSession).join('\n\n'):'(nothing new to sync)';
+  const readable=list.length?GYM_MARKER+'\n'+list.map(fmtSession).join('\n\n'):'(nothing new to sync)';
   const jsonObj=list.map(s=>({date:s.date,split:s.split,notes:s.notes||'',
     exercises:s.exercises.map(e=>({name:e.name,equipment:e.equipment,sets:e.sets,remarks:e.remarks||''}))}));
   const js=JSON.stringify(jsonObj,null,1);
-  window._exp={r:readable,j:js};
-  let h='<h3>Send to Claude</h3><small class="note">Append to Gym Schedule.xlsx (Upper\u2192Upper sheet, Lower\u2192Lower sheet). Say: \u201csync my gym log\u201d.</small>'+
+  window._exp={r:readable,j:js}; window._expList=list;
+  let h='<h3>Send workout log</h3><small class="note">Send to your own WhatsApp (message yourself). It auto-syncs into Gym Schedule.xlsx every Sunday 7pm.</small>'+
    '<div class="seg"><button class="on" id="t-r" onclick="seg(\'r\')">Readable</button><button id="t-j" onclick="seg(\'j\')">JSON</button></div>'+
    '<textarea id="exp">'+readable.replace(/</g,'&lt;')+'</textarea>'+
-   '<div class="acts"><button class="go" onclick="copyExp()">Copy</button><button class="ghost" onclick="closeModal()">Close</button></div>';
+   '<div class="acts"><button class="go" onclick="sendWhatsApp()">Send to WhatsApp</button><button class="ghost" onclick="copyExp()">Copy</button><button class="ghost" onclick="closeModal()">Close</button></div>';
   showModal(h);
+}
+function sendWhatsApp(){
+  if(!window._expList||!window._expList.length){toast('Nothing to send');return}
+  const url='https://wa.me/6597106524?text='+encodeURIComponent(window._exp.r);
+  window._expList.forEach(s=>{s.synced=true}); saveDB();
+  try{window.open(url,'_blank')}catch(e){location.href=url}
+  toast('Opening WhatsApp \u2013 tap Send'); closeModal();
 }
 function seg(m){$('t-r').className=m==='r'?'on':'';$('t-j').className=m==='j'?'on':'';$('exp').value=(m==='r'?window._exp.r:window._exp.j)}
 function copyExp(){const t=$('exp');t.select();const done=()=>toast('Copied \u2013 paste to Claude');
