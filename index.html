@@ -113,6 +113,10 @@ textarea#exp{width:100%;min-height:200px;background:var(--bg);color:var(--txt);b
 .screen{display:none}
 .screen.on{display:block}
 label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
+.setup{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.eqsel{background:var(--card2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:12px;font-weight:600;font-family:inherit;max-width:140px}
+.unitog{padding:6px 10px;font-size:12px;background:var(--card2);border:1px solid var(--line);color:var(--mut)}
+.unitog.on{background:var(--acc);color:#06210f;border-color:var(--acc)}
 .restbar{position:fixed;left:0;right:0;bottom:112px;max-width:560px;margin:0 auto;display:flex;align-items:center;gap:8px;
   padding:8px 12px;background:#151922;border:1px solid var(--acc);border-radius:12px;z-index:25;box-shadow:0 6px 20px rgba(0,0,0,.45)}
 .restbar #resttime{flex:1;font-weight:800;font-size:16px;color:var(--acc);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -178,7 +182,7 @@ window.SEED = {"splits":["Upper","Lower"],"generated":"2026-08-18","history":{"U
 const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
-const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press"},{name:"Lat Pulldown"},{name:"Pec Deck"},{name:"Chest-Supported Row"},{name:"Cross Body Y-Raise"},{name:"Tricep Press-down"},{name:"Bayesian Curl"}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump"},{name:"Kettlebell Swing"},{name:"Depth Jump"},{name:"Leg Press"},{name:"Leg Curl"},{name:"Hip Thrust"},{name:"Calf Raise"},{name:"Hip Abductor"}],created:'2026-08-19'}];
+const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press",equipment:"Machine",uni:true},{name:"Lat Pulldown",equipment:"Machine",uni:false},{name:"Pec Deck",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Cross Body Y-Raise",equipment:"Cable",uni:true},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Depth Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Leg Curl",equipment:"Machine",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false},{name:"Hip Abductor",equipment:"Machine",uni:false}],created:'2026-08-19'}]
 function seedDefaultRoutines(){if(DB.routinesSeeded)return;DEFAULT_ROUTINES.forEach(r=>{if(!DB.routines.some(x=>x.split===r.split&&x.name.toLowerCase()===r.name.toLowerCase()))DB.routines.push(JSON.parse(JSON.stringify(r)))});DB.routinesSeeded=true;saveDB()}
 let DB=loadDB();
 migrateDB();
@@ -220,16 +224,14 @@ function topWeight(ex){const w=ex.sets.map(s=>s.weight).filter(x=>typeof x==='nu
 function buildCatalog(){
   const cat={Upper:{},Lower:{}};
   ['Upper','Lower'].forEach(sp=>{
-    const byname={}; const sessions=DB.history[sp];
-    // oldest-first appearances
+    const bykey={}; const sessions=DB.history[sp];
     for(let k=sessions.length-1;k>=0;k--){
-      sessions[k].exercises.forEach(ex=>{(byname[ex.name]=byname[ex.name]||[]).push({ex,date:sessions[k].date})});
+      sessions[k].exercises.forEach(ex=>{const key=exKey(ex);(bykey[key]=bykey[key]||[]).push({ex,date:sessions[k].date})});
     }
-    // newest-first for latest info
     const latest={};
-    sessions.forEach(s=>s.exercises.forEach(ex=>{if(!latest[ex.name])latest[ex.name]={equipment:ex.equipment,lastSets:ex.sets,lastDate:s.date}}));
-    Object.keys(byname).forEach(name=>{
-      const apps=byname[name],reps=[],ceilSig=[],floorSig=[],deltas=[];let prev=null;
+    sessions.forEach(s=>s.exercises.forEach(ex=>{const key=exKey(ex);if(!latest[key])latest[key]={name:ex.name,equipment:ex.equipment||'',uni:uniOf(ex),lastSets:ex.sets,lastDate:s.date}}));
+    Object.keys(bykey).forEach(key=>{
+      const apps=bykey[key],reps=[],ceilSig=[],floorSig=[],deltas=[];let prev=null;
       apps.forEach(a=>{
         const rp=a.ex.sets.map(s=>s.reps).filter(x=>typeof x==='number');
         rp.forEach(r=>reps.push(r));
@@ -243,23 +245,34 @@ function buildCatalog(){
       else if(reps.length){floor=Math.round(q(reps,.25));ceiling=Math.round(q(reps,.75))}
       else{floor=6;ceiling=10}
       floor=Math.max(3,Math.min(floor,15));ceiling=Math.max(floor+1,Math.min(ceiling,25));
-      const eq=latest[name].equipment; let inc=EQUIP_INC[eq]!=null?EQUIP_INC[eq]:2.5;
+      const L=latest[key]; const eq=L.equipment; let inc=EQUIP_INC[eq]!=null?EQUIP_INC[eq]:2.5;
       const rd=deltas.map(d=>Math.round(d*4)/4).filter(d=>d>0&&d<=20);
       if(rd.length>=3){const c={};rd.forEach(d=>c[d]=(c[d]||0)+1);
         let best=null,bc=0;Object.keys(c).forEach(k=>{if(c[k]>bc){bc=c[k];best=+k}});
         if(bc>=2)inc=best;}
       inc=snapInc(inc,eq);
-      cat[sp][name]={name,equipment:eq,count:apps.length,lastDate:latest[name].lastDate,
-        lastSets:latest[name].lastSets,floor,ceiling,inc};
+      cat[sp][key]={id:key,name:L.name,equipment:eq,uni:L.uni,count:apps.length,lastDate:L.lastDate,
+        lastSets:L.lastSets,floor,ceiling,inc};
     });
   });
   return cat;
 }
 function catalog(){if(!CAT)CAT=buildCatalog();return CAT}
-function catFor(sp,includeHidden){let a=Object.values(catalog()[sp]);if(!includeHidden){const h=DB.hidden[sp]||[];a=a.filter(e=>h.indexOf(e.name)<0)}return a.sort((a,b)=>b.count-a.count)}
-function lookup(sp,name){return catalog()[sp][name]}
-function lookupAny(name){let f=null;['Upper','Lower'].forEach(sp=>{const x=catalog()[sp][name];
-  if(x&&(!f||x.lastDate>f.lastDate))f=x});return f}
+function uniFromRemarks(rem){return /(single[- ]?arm|single[- ]?leg|unilateral|1[- ]?arm|1[- ]?leg)/i.test(rem||'')}
+function uniOf(ex){return ex&&ex.uni!==undefined?!!ex.uni:uniFromRemarks(ex&&ex.remarks)}
+function idKey(name,equipment,uni){return name+'@@'+(equipment||'')+'@@'+(uni?'U':'B')}
+function splitKey(k){const p=String(k).split('@@');return{name:p[0],equipment:p[1]||'',uni:p[2]==='U'}}
+function exKey(ex){return idKey(ex.name,ex.equipment,uniOf(ex))}
+function idLabel(name,equipment,uni){return name+(equipment?' \u00b7 '+equipment:'')+(uni?' \u00b7 Unilateral':'')}
+function keyLabel(k){if(String(k).indexOf('@@')<0)return k;const o=splitKey(k);return idLabel(o.name,o.equipment,o.uni)}
+function isHiddenEntry(sp,e){const h=DB.hidden[sp]||[];return h.indexOf(e.id)>=0||h.indexOf(e.name)>=0}
+function catFor(sp,includeHidden){let a=Object.values(catalog()[sp]);if(!includeHidden){a=a.filter(e=>!isHiddenEntry(sp,e))}return a.sort((a,b)=>b.count-a.count)}
+function lookupKey(sp,key){return catalog()[sp][key]}
+function lookupAnyKey(key){let f=null;['Upper','Lower'].forEach(sp=>{const x=catalog()[sp][key];if(x&&(!f||x.lastDate>f.lastDate))f=x});return f}
+function bestIdentity(sp,name){let best=null;
+  Object.values(catalog()[sp]).forEach(e=>{if(e.name===name&&(!best||e.count>best.count))best=e});
+  if(!best)['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===name&&(!best||e.count>best.count))best=e}));
+  return best}
 
 /* ================= movement patterns / recs ================= */
 function pattern(n){n=n.toLowerCase();
@@ -307,9 +320,9 @@ function orderRank(n){const p=pattern(n);const R={plyo:1,hinge_power:2,
   glute:4,hamstring:4,quad_iso:4,chest_fly:5,side_delt:5,rear_delt:5,front_delt:5,biceps:5,triceps:5,traps:5,hip_iso:5,
   calf:6,core:6,forearm:6,other:5};return R[p]||5}
 
-function recommend(sp,name){
-  const c=lookup(sp,name)||lookupAny(name);
-  if(!c)return{sets:[{reps:6,weight:''}],why:'New exercise \u2013 pick a comfortable weight.'};
+function recommend(sp,key){
+  const c=lookupKey(sp,key)||lookupAnyKey(key);
+  if(!c)return{sets:[{reps:6,weight:''}],why:'New setup \u2013 pick a comfortable weight.'};
   const inc=c.inc, bw=c.equipment==='Bodyweight';
   const sets=c.lastSets.map(s=>{let lr=num(s.reps),lw=s.weight;
     if(bw||lw==='-'||lw==null||isNaN(+lw))return{reps:(typeof lr==='number'?lr+1:lr),weight:(lw==='-'?'-':lw)};
@@ -351,19 +364,20 @@ function startSplit(sp){const rts=DB.routines.filter(r=>r.split===sp);
 function doChooseSplit(sp,mode){
   split=sp;
   active={split:sp,date:today(),exercises:[],notes:''};
-  let names;
-  if(mode==='empty')names=[];
-  else if(Array.isArray(mode))names=mode;
-  else{const last=DB.history[sp][0];names=last?last.exercises.map(e=>e.name):[]}
-  names.forEach(n=>addExercise(n,false));
+  let items;
+  if(mode==='empty')items=[];
+  else if(Array.isArray(mode))items=mode;
+  else{const last=DB.history[sp][0];items=last?last.exercises.map(e=>({name:e.name,equipment:e.equipment,uni:uniOf(e)})):[]}
+  items.forEach(it=>{if(typeof it==='string')addExercise(it,undefined,undefined,false);else addExercise(it.name,it.equipment,it.uni,false)});
   if(mode==null)active.exercises.sort((a,b)=>orderRank(a.name)-orderRank(b.name));
   saveDB();
   renderSplits();renderList();renderNotes();showLogging();
 }
 function showLogging(){$('actionbar').style.display='flex';document.body.classList.add('logging')}
-function addExercise(name,doSave){
-  const c=lookup(split,name)||lookupAny(name),rec=recommend(split,name);
-  active.exercises.push({name,equipment:c?c.equipment:'',
+function addExercise(name,equipment,uni,doSave){
+  if(equipment===undefined){const b=bestIdentity(split,name);if(b){equipment=b.equipment;uni=b.uni}else{equipment='';uni=false}}
+  uni=!!uni;const key=idKey(name,equipment,uni),rec=recommend(split,key);
+  active.exercises.push({name,equipment:equipment||'',uni:uni,
     sets:rec.sets.map(s=>({reps:s.reps,weight:s.weight,done:false})),remarks:'',_rec:rec});
   if(doSave!==false){active.dirty=true;saveDB();renderList();toast('Added '+name)}
 }
@@ -385,17 +399,23 @@ function renderNotes(){
     (active.notes||'').replace(/</g,'&lt;')+'</textarea>';
 }
 function card(ex,i){
-  const c=lookup(split,ex.name)||lookupAny(ex.name),rec=ex._rec||recommend(split,ex.name);
+  const key=exKey(ex),c=lookupKey(split,key)||lookupAnyKey(key),rec=ex._rec||recommend(split,key);
   const d=document.createElement('div');d.className='card';
-  const lastStr=c?c.lastSets.map(s=>s.reps+'\u00d7'+s.weight).join('  /  '):'no history';
+  const lastStr=c?c.lastSets.map(s=>s.reps+'×'+s.weight).join('  /  '):'no history';
   let sets='';
   ex.sets.forEach((s,si)=>{sets+='<div class="setline">'+
     '<span class="setlabel'+(s.done?' done':'')+'" onclick="toggleDone('+i+','+si+')">Set '+(si+1)+'</span>'+
     '<input class="inp" inputmode="numeric" value="'+(s.reps==null?'':s.reps)+'" placeholder="reps" onchange="upd('+i+','+si+',\'reps\',this.value)"><span class="unit">rep</span>'+
     '<input class="inp" inputmode="decimal" value="'+(s.weight==null?'':s.weight)+'" placeholder="kg" onchange="upd('+i+','+si+',\'weight\',this.value)"><span class="unit">kg</span>'+
     '<button class="setdel" onclick="delSet('+i+','+si+')">&times;</button></div>';});
-  const winTag=c?'<span class="tag">target '+c.floor+'\u2013'+c.ceiling+' reps</span>':'';
-  d.innerHTML='<div class="exh"><div><div class="exname">'+ex.name+'</div><span class="eqp">'+(ex.equipment||'-')+'</span></div>'+
+  const winTag=c?'<span class="tag">target '+c.floor+'–'+c.ceiling+' reps</span>':'';
+  const eqopts=['Barbell','Dumbbell','Machine','Cable','Bodyweight'];
+  const eqsel='<select class="eqsel" onchange="setEquip('+i+',this.value)">'+
+    eqopts.map(o=>'<option'+(o===ex.equipment?' selected':'')+'>'+o+'</option>').join('')+
+    (eqopts.indexOf(ex.equipment)<0?'<option selected>'+(ex.equipment||'–')+'</option>':'')+'</select>';
+  const unibtn='<button class="mini unitog'+(uniOf(ex)?' on':'')+'" onclick="toggleUni('+i+')">Unilateral</button>';
+  d.innerHTML='<div class="exh"><div style="flex:1;min-width:0"><div class="exname">'+ex.name+'</div>'+
+      '<div class="setup">'+eqsel+unibtn+'</div></div>'+
     '<div class="movebtns"><button class="mini" onclick="moveEx('+i+',-1)">&#9650;</button>'+
     '<button class="mini" onclick="moveEx('+i+',1)">&#9660;</button>'+
     '<button class="mini" onclick="rmEx('+i+')">&times;</button></div></div>'+
@@ -407,6 +427,10 @@ function card(ex,i){
     '<input class="field" style="flex:2;min-width:120px;padding:8px" placeholder="remarks (grip, tempo...)" value="'+(ex.remarks||'').replace(/"/g,'&quot;')+'" onchange="active.exercises['+i+'].remarks=this.value;active.dirty=true;saveDB()"></div>';
   return d;
 }
+function setEquip(i,val){active.exercises[i].equipment=val;reloadIdentity(i)}
+function toggleUni(i){const ex=active.exercises[i];ex.uni=!uniOf(ex);reloadIdentity(i)}
+function reloadIdentity(i){const ex=active.exercises[i];const rec=recommend(split,exKey(ex));ex._rec=rec;
+  ex.sets=rec.sets.map(s=>({reps:s.reps,weight:s.weight,done:false}));touch();saveDB();renderList()}
 function toggleDone(i,si){const s=active.exercises[i].sets[si];s.done=!s.done;touch();saveDB();renderList();if(s.done&&DB.settings.restAuto){ensureAudio();restStart(active.exercises[i].name)}}
 function upd(i,si,f,v){active.exercises[i].sets[si][f]=num(v);touch();saveDB()}
 function delSet(i,si){const s=active.exercises[i].sets;if(s.length<=1){toast('Keep at least 1 set');return}
@@ -437,36 +461,36 @@ function pickerHTML(){
   h+='<button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>';
   return h;
 }
-function pickRow(e){return '<div class="pickrow" data-n="'+e.name.toLowerCase()+'" onclick="pickAdd(\''+esc(e.name)+'\')">'+
-  '<div><div class="exname">'+e.name+'</div><span class="eqp">'+(e.equipment||'-')+'</span></div>'+
+function pickRow(e){return '<div class="pickrow" data-n="'+(e.name+' '+(e.equipment||'')).toLowerCase()+'" onclick="pickAdd(\''+esc(e.id)+'\')">'+
+  '<div><div class="exname">'+e.name+'</div><span class="eqp">'+(e.equipment||'-')+(e.uni?' · 1-side':'')+'</span></div>'+
   '<span class="tag">'+e.count+'×<br>'+relDate(e.lastDate)+'</span></div>'}
 function filterPick(v){v=v.toLowerCase();document.querySelectorAll('#pickwrap .pickrow').forEach(r=>{
   r.style.display=r.dataset.n.indexOf(v)>=0?'flex':'none'})}
-function pickAdd(n){closeModal();addExercise(n)}
+function pickAdd(key){closeModal();const o=splitKey(key);addExercise(o.name,o.equipment,o.uni)}
 function manageHTML(){
   const all=catFor(split,true);
-  const staleN=all.filter(e=>!isHidden(split,e.name)&&daysSince(e.lastDate)>90).length;
-  let h='<small class="note">Rename to fix or merge duplicates – the history combines under the new name. Remove just hides it from this list; your logged history and spreadsheet stay intact.</small>';
+  const staleN=all.filter(e=>!isHiddenEntry(split,e)&&daysSince(e.lastDate)>90).length;
+  let h='<small class="note">Rename to fix or merge labels (applies to that name across setups). Remove hides one setup from the list; your logged history and spreadsheet stay intact.</small>';
   if(staleN)h+='<button class="ghost" style="width:100%;margin-bottom:10px" onclick="bulkHideStale()">Hide '+staleN+' not used in 90+ days</button>';
   h+='<div class="pick">';
-  all.filter(e=>!isHidden(split,e.name)).forEach(e=>{
+  all.filter(e=>!isHiddenEntry(split,e)).forEach(e=>{
     h+='<div class="setline" style="margin-top:8px">'+
       '<input class="inp" style="flex:2;text-align:left;padding:9px" value="'+e.name.replace(/"/g,'&quot;')+'" onchange="renameExercise(\''+esc(e.name)+'\',this.value)">'+
-      '<span class="tag" style="width:56px">'+e.count+'×<br>'+relDate(e.lastDate)+'</span>'+
-      '<button class="setdel" onclick="hideExercise(\''+esc(e.name)+'\')">&times;</button></div>';
+      '<span class="tag" style="width:88px">'+(e.equipment||'-')+(e.uni?' 1s':'')+'<br>'+e.count+'× '+relDate(e.lastDate)+'</span>'+
+      '<button class="setdel" onclick="hideExercise(\''+esc(e.id)+'\')">&times;</button></div>';
   });
   h+='</div>';
   const hid=(DB.hidden[split]||[]);
   if(hid.length){h+='<label class="lbl">Removed ('+hid.length+') – tap to add back</label><div class="pick">';
-    hid.slice().sort().forEach(n=>{h+='<div class="pickrow" onclick="unhideExercise(\''+esc(n)+'\')">'+
-      '<div class="exname">'+n+'</div><span class="tag">+ restore</span></div>'});
+    hid.slice().sort().forEach(k=>{h+='<div class="pickrow" onclick="unhideExercise(\''+esc(k)+'\')">'+
+      '<div class="exname">'+keyLabel(k)+'</div><span class="tag">+ restore</span></div>'});
     h+='</div>';}
   return h;
 }
-function hideExercise(name){const a=DB.hidden[split]=DB.hidden[split]||[];if(a.indexOf(name)<0)a.push(name);saveDB();refreshPicker();toast('Removed '+name)}
-function unhideExercise(name){DB.hidden[split]=(DB.hidden[split]||[]).filter(n=>n!==name);saveDB();refreshPicker();toast('Restored '+name)}
+function hideExercise(key){const a=DB.hidden[split]=DB.hidden[split]||[];if(a.indexOf(key)<0)a.push(key);saveDB();refreshPicker();toast('Removed')}
+function unhideExercise(key){DB.hidden[split]=(DB.hidden[split]||[]).filter(n=>n!==key);saveDB();refreshPicker();toast('Restored')}
 function bulkHideStale(){const a=DB.hidden[split]=DB.hidden[split]||[];let n=0;
-  catFor(split,true).forEach(e=>{if(a.indexOf(e.name)<0&&daysSince(e.lastDate)>90){a.push(e.name);n++}});
+  catFor(split,true).forEach(e=>{if(!isHiddenEntry(split,e)&&daysSince(e.lastDate)>90){a.push(e.id);n++}});
   saveDB();refreshPicker();toast('Removed '+n+' stale')}
 function renameExercise(oldName,val){val=(val||'').trim();
   if(!val||val===oldName){refreshPicker();return}
@@ -480,30 +504,31 @@ function doRename(oldName,val){
   DB.hidden[split]=(DB.hidden[split]||[]).filter(n=>n!==val&&n!==oldName);
   CAT=null;saveDB();refreshPicker();if(active)renderList();toast('Renamed to '+val)}
 
-function alternatives(sp,name){const p=pattern(name),seen=new Set([name]),out=[];
-  catFor(sp).forEach(e=>{if(pattern(e.name)===p&&!seen.has(e.name)){seen.add(e.name);out.push({name:e.name,equipment:e.equipment,hist:true})}});
-  (CURATED[p]||[]).forEach(n=>{if(!seen.has(n)){seen.add(n);out.push({name:n,equipment:'',hist:false})}});
+function alternatives(sp,name){const p=pattern(name),seen=new Set(),out=[];
+  catFor(sp).forEach(e=>{if(pattern(e.name)===p&&e.name!==name&&!seen.has(e.id)){seen.add(e.id);out.push(e)}});
+  (CURATED[p]||[]).forEach(n=>{const k=idKey(n,'',false);if(n!==name&&!seen.has(k)){seen.add(k);out.push({id:k,name:n,equipment:'',uni:false,count:0})}});
   return out;}
 function openAlts(i){const ex=active.exercises[i],alts=alternatives(split,ex.name);
-  let h='<h3>Swap "'+ex.name+'"</h3><small class="note">Same pattern (<b>'+pattern(ex.name).replace(/_/g,' ')+'</b>) \u2013 for when a machine\u2019s taken. \u2605 = done before.</small><div class="pick">';
+  let h='<h3>Swap "'+ex.name+'"</h3><small class="note">Same pattern (<b>'+pattern(ex.name).replace(/_/g,' ')+'</b>). ★ = done before.</small><div class="pick">';
   if(!alts.length)h+='<p class="empty">No close alternatives.</p>';
-  alts.forEach(a=>{const rec=recommend(split,a.name);
-    const rs=rec.date?rec.sets.map(s=>s.reps+'\u00d7'+s.weight).join(' / '):'fresh start';
-    h+='<div class="pickrow" onclick="doSwap('+i+',\''+a.name.replace(/'/g,"\\'")+'\')">'+
-      '<div><div class="exname">'+(a.hist?'\u2605 ':'')+a.name+'</div><span class="eqp">'+(a.equipment||'alt')+'</span></div>'+
+  alts.forEach(a=>{const rec=recommend(split,a.id);
+    const rs=rec.date?rec.sets.map(s=>s.reps+'×'+s.weight).join(' / '):'fresh start';
+    h+='<div class="pickrow" onclick="doSwap('+i+',\''+esc(a.id)+'\')">'+
+      '<div><div class="exname">'+(a.count?'★ ':'')+a.name+'</div><span class="eqp">'+(a.equipment||'alt')+(a.uni?' · 1-side':'')+'</span></div>'+
       '<span class="tag">'+rs+'</span></div>'});
   h+='</div><button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Keep '+ex.name+'</button>';
   showModal(h);}
-function doSwap(i,name){const c=lookup(split,name)||lookupAny(name),rec=recommend(split,name);
-  active.exercises[i]={name,equipment:c?c.equipment:'',sets:rec.sets.map(s=>({reps:s.reps,weight:s.weight,done:false})),remarks:'',_rec:rec};
-  touch();saveDB();closeModal();renderList();toast('Swapped to '+name)}
+function doSwap(i,key){const o=splitKey(key),rec=recommend(split,key);
+  active.exercises[i]={name:o.name,equipment:o.equipment,uni:o.uni,sets:rec.sets.map(s=>({reps:s.reps,weight:s.weight,done:false})),remarks:'',_rec:rec};
+  touch();saveDB();closeModal();renderList();toast('Swapped to '+o.name)}
 
 function finishSession(){
   if(!active||!active.exercises.length){toast('Nothing to save');return}
   const clean={date:active.date,split:active.split,notes:active.notes||'',synced:false,src:'app',
-    exercises:active.exercises.map(e=>({name:e.name,equipment:e.equipment,
+    exercises:active.exercises.map(e=>{let rem=e.remarks||'';const u=uniOf(e);if(u&&!uniFromRemarks(rem))rem=(rem?rem+'; ':'')+'Unilateral';
+      return {name:e.name,equipment:e.equipment,uni:u,
       sets:e.sets.filter(s=>s.reps!=null||s.weight!=null).map(s=>({reps:s.reps,weight:s.weight})),
-      remarks:e.remarks||''})).filter(e=>e.sets.length)};
+      remarks:rem}}).filter(e=>e.sets.length)};
   if(!clean.exercises.length){toast('Add reps/weight first');return}
   DB.history[active.split].unshift(clean);   // newest first
   active=null;split=null;saveDB();
@@ -636,7 +661,8 @@ function renderBackup(){
 function fmtSession(s){
   const read=s.date+'  ('+s.split+')\n'+s.exercises.map(e=>{
     const sets=e.sets.map(st=>(st.reps==null?'-':st.reps)+'x'+(st.weight==null?'-':st.weight)).join('  ');
-    return '  '+e.name+' ['+(e.equipment||'-')+']: '+sets+(e.remarks?'  // '+e.remarks:'')}).join('\n')+
+    let rem=e.remarks||''; if(uniOf(e)&&!uniFromRemarks(rem))rem=(rem?rem+'; ':'')+'Unilateral';
+    return '  '+e.name+' ['+(e.equipment||'-')+']: '+sets+(rem?'  // '+rem:'')}).join('\n')+
     (s.notes?'\n  notes: '+s.notes:'');
   return read;
 }
@@ -727,7 +753,7 @@ function suggestRoutineName(){const n=DB.routines.filter(r=>r.split===active.spl
   return active.split+' '+String.fromCharCode(65+Math.min(n,25))}
 function saveAsRoutine(){if(!active||!active.exercises.length){toast('Nothing to save');return}
   promptText('Name this routine',suggestRoutineName(),nm=>{nm=(nm||'').trim();if(!nm)return;
-    const ex=active.exercises.map(e=>({name:e.name}));
+    const ex=active.exercises.map(e=>({name:e.name,equipment:e.equipment,uni:uniOf(e)}));
     const ex0=DB.routines.find(r=>r.split===active.split&&r.name.toLowerCase()===nm.toLowerCase());
     if(ex0){askConfirm('A '+active.split+' routine "'+ex0.name+'" already exists. Overwrite it?',()=>{ex0.exercises=ex;ex0.name=nm;saveDB();toast('Updated "'+nm+'"')},'Overwrite');return}
     DB.routines.push({id:'r'+Date.now(),name:nm,split:active.split,exercises:ex,created:today()});
@@ -751,7 +777,7 @@ function openStartChooser(sp,rts){
   h+='<div class="pickrow" onclick="closeModal();doChooseSplit(\''+sp+'\',\'empty\')"><div class="exname">Empty</div><span class="tag">blank</span></div>';
   h+='</div><button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Cancel</button>';showModal(h)}
 function startFromRoutine(id){const r=DB.routines.find(x=>x.id===id);closeModal();if(!r)return;
-  doChooseSplit(r.split,r.exercises.map(e=>e.name));toast('Started '+r.name)}
+  doChooseSplit(r.split,r.exercises);toast('Started '+r.name)}
 
 
 /* ================= modal ================= */
