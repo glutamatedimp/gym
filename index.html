@@ -182,8 +182,19 @@ window.SEED = {"splits":["Upper","Lower"],"generated":"2026-08-18","history":{"U
 const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
-const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press",equipment:"Machine",uni:true},{name:"Lat Pulldown",equipment:"Machine",uni:false},{name:"Pec Deck",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Cross Body Y-Raise",equipment:"Cable",uni:true},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Depth Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Leg Curl",equipment:"Machine",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false},{name:"Hip Abductor",equipment:"Machine",uni:false}],created:'2026-08-19'}]
+const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press",equipment:"Machine",uni:true},{name:"Lat Pulldown",equipment:"Machine",uni:false},{name:"Pec Fly",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Cross Body Y-Raise",equipment:"Cable",uni:true},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Depth Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Leg Curl",equipment:"Machine",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false},{name:"Hip Abductor",equipment:"Machine",uni:false}],created:'2026-08-19'}]
 function seedDefaultRoutines(){if(DB.routinesSeeded)return;DEFAULT_ROUTINES.forEach(r=>{if(!DB.routines.some(x=>x.split===r.split&&x.name.toLowerCase()===r.name.toLowerCase()))DB.routines.push(JSON.parse(JSON.stringify(r)))});DB.routinesSeeded=true;saveDB()}
+const RENAMES_V=1;
+const RENAMES={'Stiff Leg DL':'Stiff Leg Dead Lift','Stiff Leg RDL':'Stiff Leg Romanian Dead Lift',
+ 'Sumo Deficit DL':'Sumo Deficit Dead Lift','Abductor':'Hip Abductor',
+ 'Pec Deck':'Pec Fly','Seated Pec Fly':'Pec Fly'};
+function applyRenames(){const rn=n=>RENAMES[n]||n;
+  ['Upper','Lower'].forEach(sp=>{(DB.history[sp]||[]).forEach(s=>s.exercises.forEach(e=>{e.name=rn(e.name)}))});
+  if(DB.active&&DB.active.exercises)DB.active.exercises.forEach(e=>{e.name=rn(e.name);delete e._rec});
+  (DB.routines||[]).forEach(r=>r.exercises.forEach(e=>{e.name=rn(e.name)}));
+  ['Upper','Lower'].forEach(sp=>{if(DB.hidden&&DB.hidden[sp])DB.hidden[sp]=DB.hidden[sp].map(k=>{
+    if(String(k).indexOf('@@')<0)return rn(k);const o=splitKey(k);return idKey(rn(o.name),o.equipment,o.uni)})});
+}
 let DB=loadDB();
 migrateDB();
 let CAT=null;              // derived catalog cache
@@ -205,7 +216,7 @@ function loadDB(){
 function cloneEx(e){return {name:e.name,equipment:e.equipment,
   sets:(e.sets||[]).map(s=>({reps:s.reps,weight:s.weight})),remarks:e.remarks||''}}
 function saveDB(){DB.active=active;localStorage.setItem(KEY,JSON.stringify(DB));CAT=null}
-function migrateDB(){if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};if(!DB.settings)DB.settings={restDefault:120,restAuto:true,restByExercise:{}};if(!DB.routines)DB.routines=[];if(!DB.bodyweight)DB.bodyweight=[]}
+function migrateDB(){if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};if(!DB.settings)DB.settings={restDefault:120,restAuto:true,restByExercise:{}};if(!DB.routines)DB.routines=[];if(!DB.bodyweight)DB.bodyweight=[];if((DB.renamesV||0)<RENAMES_V){applyRenames();DB.renamesV=RENAMES_V}}
 function num(v){return (v===''||v==null)?null:(isNaN(+v)?v:+v)}
 function today(){return new Date().toLocaleDateString('en-CA')}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');
@@ -301,7 +312,7 @@ function pattern(n){n=n.toLowerCase();
   return'other';}
 const CURATED={
  chest_press:['Bench Press','Incline Press','Chest Press','Dips','Wide Chest Press'],
- chest_fly:['Pec Deck','Pec Fly','Decline Fly'],
+ chest_fly:['Pec Fly','Decline Fly'],
  vertical_pull:['Lat Pulldown','Pull-Up','Lat Pullover'],
  horizontal_row:['Low Row','Chest-Supported Row','Pulley Row'],
  biceps:['Bayesian Curl','Preacher Curl','Incline Curl','Hammer Curl'],
@@ -320,9 +331,17 @@ function orderRank(n){const p=pattern(n);const R={plyo:1,hinge_power:2,
   glute:4,hamstring:4,quad_iso:4,chest_fly:5,side_delt:5,rear_delt:5,front_delt:5,biceps:5,triceps:5,traps:5,hip_iso:5,
   calf:6,core:6,forearm:6,other:5};return R[p]||5}
 
+function similarRef(sp,key){const o=splitKey(key);let best=null;
+  ['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===o.name&&e.id!==key&&(!best||e.count>best.count))best=e}));
+  if(!best){const p=pattern(o.name);['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(pattern(e.name)===p&&e.id!==key&&(!best||e.count>best.count))best=e}))}
+  if(!best)return null;
+  return {lastSets:best.lastSets,date:best.lastDate,label:best.name+' \u00b7 '+(best.equipment||'-')+(best.uni?' \u00b7 Unilateral':'')};}
 function recommend(sp,key){
   const c=lookupKey(sp,key)||lookupAnyKey(key);
-  if(!c)return{sets:[{reps:6,weight:''}],why:'New setup \u2013 pick a comfortable weight.'};
+  if(!c){const ref=similarRef(sp,key);
+    if(ref)return{sets:ref.lastSets.map(s=>({reps:num(s.reps),weight:s.weight})),ref:true,date:ref.date,
+      why:'New setup, no history \u2013 showing your last '+ref.label+' ('+ref.lastSets.map(s=>s.reps+'\u00d7'+s.weight).join(' / ')+') as a reference. Adjust the weight.'};
+    return{sets:[{reps:6,weight:''}],why:'New setup \u2013 pick a comfortable weight.'};}
   const inc=c.inc, bw=c.equipment==='Bodyweight';
   const sets=c.lastSets.map(s=>{let lr=num(s.reps),lw=s.weight;
     if(bw||lw==='-'||lw==null||isNaN(+lw))return{reps:(typeof lr==='number'?lr+1:lr),weight:(lw==='-'?'-':lw)};
