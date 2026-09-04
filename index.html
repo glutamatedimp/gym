@@ -182,10 +182,11 @@ window.SEED = {"splits":["Upper","Lower"],"generated":"2026-08-18","history":{"U
 const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
-const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Incline Press",equipment:"Machine",uni:true},{name:"Lat Pulldown",equipment:"Machine",uni:false},{name:"Pec Fly",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Cross Body Y-Raise",equipment:"Cable",uni:true},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-08-19'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Depth Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Leg Curl",equipment:"Machine",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false},{name:"Hip Abductor",equipment:"Machine",uni:false}],created:'2026-08-19'}]
+const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Chest Press",equipment:"Dumbbell",uni:false},{name:"Lat Pulldown",equipment:"Cable",uni:false},{name:"Pec Fly",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Seated Lateral Raise",equipment:"Dumbbell",uni:false},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-09-04'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Romanian Dead Lift",equipment:"Barbell",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false}],created:'2026-09-04'}]
 function seedDefaultRoutines(){if(DB.routinesSeeded)return;DEFAULT_ROUTINES.forEach(r=>{if(!DB.routines.some(x=>x.split===r.split&&x.name.toLowerCase()===r.name.toLowerCase()))DB.routines.push(JSON.parse(JSON.stringify(r)))});DB.routinesSeeded=true;saveDB()}
-const RENAMES_V=2;
-const RENAMES={'Stiff Leg DL':'Stiff Leg Dead Lift','Stiff Leg RDL':'Stiff Leg Romanian Dead Lift',
+const RENAMES_V=3;
+const RENAMES={'Stiff Leg DL':'Dead Lift','Stiff Leg RDL':'Romanian Dead Lift',
+ 'Stiff Leg Dead Lift':'Dead Lift','Stiff Leg Romanian Dead Lift':'Romanian Dead Lift',
  'Sumo Deficit DL':'Sumo Deficit Dead Lift','Abductor':'Hip Abductor','Pec Deck':'Pec Fly','Seated Pec Fly':'Pec Fly',
  'Bent Over Row':'Bent-Over Row','Step Up':'Step-Up','Decline Pec Fly':'Decline Fly','Declined Pec Fly':'Decline Fly',
  'Wrist Curl':'Wrist Flexion','Seated Calf Raise':'Bent-Leg Calf Raise',
@@ -333,7 +334,7 @@ const CURATED={
  front_delt:['Front Raise','Upright Row'],
  shoulder_press:['Shoulder Press'],
  quad_compound:['Hack Squat','Leg Press','Back Squat'],
- hip_hinge:['Romanian Dead Lift','Stiff Leg Romanian Dead Lift'],
+ hip_hinge:['Romanian Dead Lift','Dead Lift'],
  glute:['Hip Thrust'],hamstring:['Leg Curl'],quad_iso:['Leg Extension'],
  calf:['Calf Raise','Bent-Leg Calf Raise'],hip_iso:['Hip Abductor','Hip Adductor'],
  core:['Ab Crunch','Total Abdominal','Leg Raise']};
