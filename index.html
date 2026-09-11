@@ -484,19 +484,26 @@ function pickerHTML(){
   const eb='<button class="mini" style="float:right;margin-top:-2px" onclick="togglePickerEdit()">'+(pickerEdit?'✓ Done':'✎ Edit list')+'</button>';
   let h='<h3>Add to '+split+eb+'</h3>';
   if(!pickerEdit){
-    h+='<small class="note">Ordered by how often you train them. Tap to add.</small>'+
-       '<input class="field" id="pfilter" placeholder="Search..." oninput="filterPick(this.value)" style="margin-bottom:8px"><div class="pick" id="pickwrap">';
+    h+='<small class="note">Ordered by how often you train them. Tap to add \u2014 or type a new name to create it.</small>'+
+       '<input class="field" id="pfilter" placeholder="Search or type a new exercise\u2026" oninput="filterPick(this.value)" style="margin-bottom:8px"><div class="pick" id="pickwrap">'+
+       '<div class="pickrow" id="pcreate" style="display:none;border:1px dashed var(--acc)" onclick="createFromFilter()"><div><div class="exname" id="pcreatelbl">+ Add</div><span class="eqp">create new exercise</span></div><span class="tag">new</span></div>';
     catFor(split).forEach(e=>{h+=pickRow(e)});
     h+='</div>';
   } else { h+=manageHTML(); }
   h+='<button class="ghost" style="width:100%;margin-top:8px" onclick="closeModal()">Close</button>';
   return h;
 }
-function pickRow(e){return '<div class="pickrow" data-n="'+(e.name+' '+(e.equipment||'')).toLowerCase()+'" onclick="pickAdd(\''+esc(e.id)+'\')">'+
+function pickRow(e){return '<div class="pickrow" data-n="'+(e.name+' '+(e.equipment||'')).toLowerCase()+'" data-name="'+e.name.replace(/"/g,'&quot;').toLowerCase()+'" onclick="pickAdd(\''+esc(e.id)+'\')">'+
   '<div><div class="exname">'+e.name+'</div><span class="eqp">'+(e.equipment||'-')+(e.uni?' · 1-side':'')+'</span></div>'+
   '<span class="tag">'+e.count+'×<br>'+relDate(e.lastDate)+'</span></div>'}
-function filterPick(v){v=v.toLowerCase();document.querySelectorAll('#pickwrap .pickrow').forEach(r=>{
-  r.style.display=r.dataset.n.indexOf(v)>=0?'flex':'none'})}
+function filterPick(v){const q=v.toLowerCase().trim();let exact=false;
+  document.querySelectorAll('#pickwrap .pickrow').forEach(r=>{
+    if(r.id==='pcreate')return;
+    r.style.display=(r.dataset.n||'').indexOf(q)>=0?'flex':'none';
+    if(q&&(r.dataset.name||'')===q)exact=true;});
+  const pc=document.getElementById('pcreate');
+  if(pc){if(q&&!exact){pc.dataset.newname=v.trim();document.getElementById('pcreatelbl').textContent='+ Add \u201c'+v.trim()+'\u201d';pc.style.display='flex';}else{pc.style.display='none';}}}
+function createFromFilter(){const pc=document.getElementById('pcreate');if(!pc)return;const nm=(pc.dataset.newname||'').trim();if(!nm)return;closeModal();addExercise(nm);toast('Added '+nm+' \u2014 set its equipment on the card');}
 function pickAdd(key){closeModal();const o=splitKey(key);addExercise(o.name,o.equipment,o.uni)}
 function manageHTML(){
   const all=catFor(split,true);
