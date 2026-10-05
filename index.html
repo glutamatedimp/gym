@@ -143,6 +143,7 @@ label.lbl{font-size:12px;color:var(--mut);display:block;margin:10px 2px 4px}
       <button class="split-btn on" id="hf-all" onclick="setHistFilter('all')">All</button>
       <button class="split-btn" id="hf-Upper" onclick="setHistFilter('Upper')">Upper</button>
       <button class="split-btn" id="hf-Lower" onclick="setHistFilter('Lower')">Lower</button>
+      <button class="split-btn" id="hf-Full Body" onclick="setHistFilter('Full Body')">Full Body</button>
     </div>
     <div id="histlist"></div>
   </div>
@@ -182,7 +183,9 @@ window.SEED = {"splits":["Upper","Lower"],"generated":"2026-08-18","history":{"U
 const KEY='gym.store.v2';
 const EQUIP_INC={Barbell:5,Dumbbell:2,Machine:2.5,Cable:2.5,Bodyweight:0};
 const $=id=>document.getElementById(id);
-const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Chest Press",equipment:"Dumbbell",uni:false},{name:"Lat Pulldown",equipment:"Cable",uni:false},{name:"Pec Fly",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Seated Lateral Raise",equipment:"Dumbbell",uni:false},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-09-04'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Romanian Dead Lift",equipment:"Barbell",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false}],created:'2026-09-04'}]
+const SPLITS=['Upper','Lower','Full Body'];
+function blankSplits(){const o={};SPLITS.forEach(s=>o[s]=[]);return o}
+const DEFAULT_ROUTINES=[{id:'seed-upper',name:'Upper',split:'Upper',exercises:[{name:"Chest Press",equipment:"Dumbbell",uni:false},{name:"Lat Pulldown",equipment:"Cable",uni:false},{name:"Pec Fly",equipment:"Machine",uni:false},{name:"Chest-Supported Row",equipment:"Machine",uni:false},{name:"Seated Lateral Raise",equipment:"Dumbbell",uni:false},{name:"Tricep Press-down",equipment:"Cable",uni:false},{name:"Bayesian Curl",equipment:"Cable",uni:true}],created:'2026-09-04'},{id:'seed-lower',name:'Lower',split:'Lower',exercises:[{name:"Kettlebell Swing",equipment:"Dumbbell",uni:false},{name:"Pogo Jump",equipment:"Bodyweight",uni:false},{name:"Leg Press",equipment:"Machine",uni:false},{name:"Romanian Dead Lift",equipment:"Barbell",uni:false},{name:"Hip Thrust",equipment:"Machine",uni:false},{name:"Calf Raise",equipment:"Machine",uni:false}],created:'2026-09-04'},{id:'seed-fullbody',name:'Full Body',split:'Full Body',exercises:[{name:"Hack Squat",equipment:"Machine",uni:false},{name:"Romanian Dead Lift",equipment:"Barbell",uni:false},{name:"Chest Press",equipment:"Dumbbell",uni:false},{name:"Lat Pulldown",equipment:"Cable",uni:false},{name:"Seated Lateral Raise",equipment:"Dumbbell",uni:false},{name:"Ab Crunch",equipment:"Cable",uni:false}],created:'2026-10-05'}]
 function seedDefaultRoutines(){if(DB.routinesSeeded)return;DEFAULT_ROUTINES.forEach(r=>{if(!DB.routines.some(x=>x.split===r.split&&x.name.toLowerCase()===r.name.toLowerCase()))DB.routines.push(JSON.parse(JSON.stringify(r)))});DB.routinesSeeded=true;saveDB()}
 const RENAMES_V=3;
 const RENAMES={'Stiff Leg DL':'Dead Lift','Stiff Leg RDL':'Romanian Dead Lift',
@@ -199,10 +202,10 @@ const RENAME_EQUIP={'Tricep Press':'Cable'};
 const RENAME_UNI={'Single-Arm Lat Pulldown':true};
 function applyRenames(){
   const fix=e=>{const on=e.name;if(RENAME_EQUIP[on])e.equipment=RENAME_EQUIP[on];if(RENAME_UNI[on])e.uni=true;e.name=RENAMES[on]||on};
-  ['Upper','Lower'].forEach(sp=>{(DB.history[sp]||[]).forEach(s=>s.exercises.forEach(fix))});
+  SPLITS.forEach(sp=>{(DB.history[sp]||[]).forEach(s=>s.exercises.forEach(fix))});
   if(DB.active&&DB.active.exercises)DB.active.exercises.forEach(e=>{fix(e);delete e._rec});
   (DB.routines||[]).forEach(r=>r.exercises.forEach(fix));
-  ['Upper','Lower'].forEach(sp=>{if(DB.hidden&&DB.hidden[sp])DB.hidden[sp]=DB.hidden[sp].map(k=>{
+  SPLITS.forEach(sp=>{if(DB.hidden&&DB.hidden[sp])DB.hidden[sp]=DB.hidden[sp].map(k=>{
     if(String(k).indexOf('@@')<0)return RENAMES[k]||k;const o=splitKey(k);
     const nm=RENAMES[o.name]||o.name,eq=RENAME_EQUIP[o.name]||o.equipment,un=RENAME_UNI[o.name]?true:o.uni;
     return idKey(nm,eq,un)})});
@@ -218,17 +221,17 @@ function touch(){if(active)active.dirty=true}
 function loadDB(){
   try{const v=JSON.parse(localStorage.getItem(KEY));if(v&&v.history)return v}catch(e){}
   // first run: seed
-  const hist={Upper:[],Lower:[]};
-  ['Upper','Lower'].forEach(sp=>{
+  const hist=blankSplits();
+  SPLITS.forEach(sp=>{
     (SEED.history[sp]||[]).forEach(s=>hist[sp].push(
       {date:s.date,split:sp,exercises:s.exercises.map(cloneEx),notes:'',synced:true,src:'seed'}));
   });
-  return {history:hist,bodyweight:[],hidden:{Upper:[],Lower:[]},settings:{restDefault:120,restAuto:true,restByExercise:{}},routines:[],active:null,seededAt:SEED.generated};
+  return {history:hist,bodyweight:[],hidden:blankSplits(),settings:{restDefault:120,restAuto:true,restByExercise:{}},routines:[],active:null,seededAt:SEED.generated};
 }
 function cloneEx(e){return {name:e.name,equipment:e.equipment,
   sets:(e.sets||[]).map(s=>({reps:s.reps,weight:s.weight})),remarks:e.remarks||''}}
 function saveDB(){DB.active=active;localStorage.setItem(KEY,JSON.stringify(DB));CAT=null}
-function migrateDB(){if(!DB.hidden)DB.hidden={Upper:[],Lower:[]};if(!DB.settings)DB.settings={restDefault:120,restAuto:true,restByExercise:{}};if(!DB.routines)DB.routines=[];if(!DB.bodyweight)DB.bodyweight=[];if((DB.renamesV||0)<RENAMES_V){applyRenames();DB.renamesV=RENAMES_V}}
+function migrateDB(){if(!DB.hidden)DB.hidden=blankSplits();SPLITS.forEach(sp=>{if(!DB.history[sp])DB.history[sp]=[];if(!DB.hidden[sp])DB.hidden[sp]=[]});if(!DB.settings)DB.settings={restDefault:120,restAuto:true,restByExercise:{}};if(!DB.routines)DB.routines=[];if(!DB.bodyweight)DB.bodyweight=[];if((DB.renamesV||0)<RENAMES_V){applyRenames();DB.renamesV=RENAMES_V}}
 function num(v){return (v===''||v==null)?null:(isNaN(+v)?v:+v)}
 function today(){return new Date().toLocaleDateString('en-CA')}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');
@@ -245,40 +248,35 @@ function snapInc(inc,eq){if(eq==='Bodyweight')return 0;const c=CAP[eq]||10;inc=M
 function topWeight(ex){const w=ex.sets.map(s=>s.weight).filter(x=>typeof x==='number');return w.length?Math.max(...w):null}
 
 function buildCatalog(){
-  const cat={Upper:{},Lower:{}};
-  ['Upper','Lower'].forEach(sp=>{
-    const bykey={}; const sessions=DB.history[sp];
-    for(let k=sessions.length-1;k>=0;k--){
-      sessions[k].exercises.forEach(ex=>{const key=exKey(ex);(bykey[key]=bykey[key]||[]).push({ex,date:sessions[k].date})});
-    }
-    const latest={};
-    sessions.forEach(s=>s.exercises.forEach(ex=>{const key=exKey(ex);if(!latest[key])latest[key]={name:ex.name,equipment:ex.equipment||'',uni:uniOf(ex),lastSets:ex.sets,lastDate:s.date}}));
-    Object.keys(bykey).forEach(key=>{
-      const apps=bykey[key],reps=[],ceilSig=[],floorSig=[],deltas=[];let prev=null;
-      apps.forEach(a=>{
-        const rp=a.ex.sets.map(s=>s.reps).filter(x=>typeof x==='number');
-        rp.forEach(r=>reps.push(r));
-        const tw=topWeight(a.ex);
-        if(prev&&tw!=null&&prev.tw!=null){const d=+(tw-prev.tw).toFixed(2);
-          if(d>0){deltas.push(d);if(prev.rp.length)ceilSig.push(Math.max(...prev.rp));if(rp.length)floorSig.push(Math.min(...rp))}}
-        prev={tw,rp};
-      });
-      let floor,ceiling;
-      if(ceilSig.length&&floorSig.length){ceiling=Math.round(median(ceilSig));floor=Math.round(median(floorSig))}
-      else if(reps.length){floor=Math.round(q(reps,.25));ceiling=Math.round(q(reps,.75))}
-      else{floor=6;ceiling=10}
-      floor=Math.max(3,Math.min(floor,15));ceiling=Math.max(floor+1,Math.min(ceiling,25));
-      const L=latest[key]; const eq=L.equipment; let inc=EQUIP_INC[eq]!=null?EQUIP_INC[eq]:2.5;
-      const rd=deltas.map(d=>Math.round(d*4)/4).filter(d=>d>0&&d<=20);
-      if(rd.length>=3){const c={};rd.forEach(d=>c[d]=(c[d]||0)+1);
-        let best=null,bc=0;Object.keys(c).forEach(k=>{if(c[k]>bc){bc=c[k];best=+k}});
-        if(bc>=2)inc=best;}
-      inc=snapInc(inc,eq);
-      cat[sp][key]={id:key,name:L.name,equipment:eq,uni:L.uni,count:apps.length,lastDate:L.lastDate,
-        lastSets:L.lastSets,floor,ceiling,inc};
+  const G={},apps={};
+  SPLITS.forEach(sp=>{(DB.history[sp]||[]).forEach(s=>s.exercises.forEach(ex=>{
+    const key=exKey(ex);(apps[key]=apps[key]||[]).push({ex,date:s.date});}));});
+  Object.keys(apps).forEach(key=>{
+    const list=apps[key].slice().sort((a,b)=>a.date<b.date?-1:(a.date>b.date?1:0));
+    const reps=[],ceilSig=[],floorSig=[],deltas=[];let prev=null;
+    list.forEach(a=>{
+      const rp=a.ex.sets.map(s=>s.reps).filter(x=>typeof x==='number');
+      rp.forEach(r=>reps.push(r));
+      const tw=topWeight(a.ex);
+      if(prev&&tw!=null&&prev.tw!=null){const d=+(tw-prev.tw).toFixed(2);
+        if(d>0){deltas.push(d);if(prev.rp.length)ceilSig.push(Math.max(...prev.rp));if(rp.length)floorSig.push(Math.min(...rp))}}
+      prev={tw,rp};
     });
+    let floor,ceiling;
+    if(ceilSig.length&&floorSig.length){ceiling=Math.round(median(ceilSig));floor=Math.round(median(floorSig))}
+    else if(reps.length){floor=Math.round(q(reps,.25));ceiling=Math.round(q(reps,.75))}
+    else{floor=6;ceiling=10}
+    floor=Math.max(3,Math.min(floor,15));ceiling=Math.max(floor+1,Math.min(ceiling,25));
+    const last=list[list.length-1];const eq=last.ex.equipment||'';
+    let inc=EQUIP_INC[eq]!=null?EQUIP_INC[eq]:2.5;
+    const rd=deltas.map(d=>Math.round(d*4)/4).filter(d=>d>0&&d<=20);
+    if(rd.length>=3){const c={};rd.forEach(d=>c[d]=(c[d]||0)+1);
+      let bb=null,bc=0;Object.keys(c).forEach(k=>{if(c[k]>bc){bc=c[k];bb=+k}});
+      if(bc>=2)inc=bb;}
+    inc=snapInc(inc,eq);
+    G[key]={id:key,name:last.ex.name,equipment:eq,uni:uniOf(last.ex),count:list.length,lastDate:last.date,lastSets:last.ex.sets,floor,ceiling,inc};
   });
-  return cat;
+  const out={};SPLITS.forEach(sp=>out[sp]=G);return out;
 }
 function catalog(){if(!CAT)CAT=buildCatalog();return CAT}
 function uniFromRemarks(rem){return /(single[- ]?arm|single[- ]?leg|unilateral|1[- ]?arm|1[- ]?leg)/i.test(rem||'')}
@@ -291,10 +289,10 @@ function keyLabel(k){if(String(k).indexOf('@@')<0)return k;const o=splitKey(k);r
 function isHiddenEntry(sp,e){const h=DB.hidden[sp]||[];return h.indexOf(e.id)>=0||h.indexOf(e.name)>=0}
 function catFor(sp,includeHidden){let a=Object.values(catalog()[sp]);if(!includeHidden){a=a.filter(e=>!isHiddenEntry(sp,e))}return a.sort((a,b)=>b.count-a.count)}
 function lookupKey(sp,key){return catalog()[sp][key]}
-function lookupAnyKey(key){let f=null;['Upper','Lower'].forEach(sp=>{const x=catalog()[sp][key];if(x&&(!f||x.lastDate>f.lastDate))f=x});return f}
+function lookupAnyKey(key){let f=null;SPLITS.forEach(sp=>{const x=catalog()[sp][key];if(x&&(!f||x.lastDate>f.lastDate))f=x});return f}
 function bestIdentity(sp,name){let best=null;
   Object.values(catalog()[sp]).forEach(e=>{if(e.name===name&&(!best||e.count>best.count))best=e});
-  if(!best)['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===name&&(!best||e.count>best.count))best=e}));
+  if(!best)SPLITS.forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===name&&(!best||e.count>best.count))best=e}));
   return best}
 
 /* ================= movement patterns / recs ================= */
@@ -344,8 +342,8 @@ function orderRank(n){const p=pattern(n);const R={plyo:1,hinge_power:2,
   calf:6,core:6,forearm:6,other:5};return R[p]||5}
 
 function similarRef(sp,key){const o=splitKey(key);let best=null;
-  ['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===o.name&&e.id!==key&&(!best||e.count>best.count))best=e}));
-  if(!best){const p=pattern(o.name);['Upper','Lower'].forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(pattern(e.name)===p&&e.id!==key&&(!best||e.count>best.count))best=e}))}
+  SPLITS.forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(e.name===o.name&&e.id!==key&&(!best||e.count>best.count))best=e}));
+  if(!best){const p=pattern(o.name);SPLITS.forEach(s2=>Object.values(catalog()[s2]).forEach(e=>{if(pattern(e.name)===p&&e.id!==key&&(!best||e.count>best.count))best=e}))}
   if(!best)return null;
   return {lastSets:best.lastSets,date:best.lastDate,label:best.name+' \u00b7 '+(best.equipment||'-')+(best.uni?' \u00b7 Unilateral':'')};}
 function recommend(sp,key){
@@ -380,7 +378,7 @@ function tab(s){['log','hist','back'].forEach(x=>{
 /* ================= LOG ================= */
 function renderSplits(){
   const el=$('splits');el.innerHTML='';
-  ['Upper','Lower'].forEach(sp=>{const b=document.createElement('button');
+  SPLITS.forEach(sp=>{const b=document.createElement('button');
     b.className='split-btn'+(sp===split?' on':'');b.textContent=sp;b.onclick=()=>chooseSplit(sp);el.appendChild(b)});
 }
 function chooseSplit(sp){
@@ -578,9 +576,9 @@ function discardSession(){if(active&&active.dirty){askConfirm('Discard this sess
 function doDiscard(){active=null;split=null;saveDB();renderSplits();renderList();renderNotes();$('actionbar').style.display='none';document.body.classList.remove('logging');restStop()}
 
 /* ================= PROGRESS ================= */
-function allExerciseNames(){const s=new Set();['Upper','Lower'].forEach(sp=>DB.history[sp].forEach(se=>se.exercises.forEach(e=>s.add(e.name))));
+function allExerciseNames(){const s=new Set();SPLITS.forEach(sp=>DB.history[sp].forEach(se=>se.exercises.forEach(e=>s.add(e.name))));
   return [...s].sort()}
-function exSessions(name){const out=[];['Upper','Lower'].forEach(sp=>DB.history[sp].forEach(se=>{
+function exSessions(name){const out=[];SPLITS.forEach(sp=>DB.history[sp].forEach(se=>{
   const ex=se.exercises.find(e=>e.name===name);if(ex)out.push({date:se.date,ex})}));
   out.sort((a,b)=>a.date<b.date?-1:1);return out}
 function est1RM(reps,w){return (typeof reps==='number'&&typeof w==='number'&&w>0)?w*(1+reps/30):null}
@@ -647,8 +645,8 @@ function spark(pts,label){
 }
 
 /* ================= HISTORY ================= */
-function setHistFilter(f){histFilter=f;['all','Upper','Lower'].forEach(x=>$('hf-'+x).classList.toggle('on',x===f));renderHistory()}
-function allSessions(){const out=[];['Upper','Lower'].forEach(sp=>DB.history[sp].forEach((s,idx)=>out.push({sp,idx,s})));
+function setHistFilter(f){histFilter=f;['all','Upper','Lower','Full Body'].forEach(x=>$('hf-'+x).classList.toggle('on',x===f));renderHistory()}
+function allSessions(){const out=[];SPLITS.forEach(sp=>DB.history[sp].forEach((s,idx)=>out.push({sp,idx,s})));
   out.sort((a,b)=>a.s.date<b.s.date?1:-1);return out}
 function renderHistory(){
   const all=allSessions().filter(o=>histFilter==='all'||o.sp===histFilter);
@@ -669,7 +667,7 @@ function delSession(sp,date){askConfirm('Delete the '+sp+' session on '+date+'? 
   const i=DB.history[sp].findIndex(s=>s.date===date&&s.src==='app');if(i>=0){DB.history[sp].splice(i,1);saveDB();renderHistory();toast('Deleted')}},'Delete')}
 
 /* ================= BACKUP / SYNC ================= */
-function unsynced(){const out=[];['Upper','Lower'].forEach(sp=>DB.history[sp].forEach(s=>{if(s.src==='app'&&!s.synced)out.push(s)}));
+function unsynced(){const out=[];SPLITS.forEach(sp=>DB.history[sp].forEach(s=>{if(s.src==='app'&&!s.synced)out.push(s)}));
   out.sort((a,b)=>a.date<b.date?-1:1);return out}
 function renderBackup(){
   const u=unsynced().length,total=DB.history.Upper.length+DB.history.Lower.length;
@@ -729,7 +727,7 @@ function seg(m){$('t-r').className=m==='r'?'on':'';$('t-j').className=m==='j'?'o
 function copyExp(){const t=$('exp');t.select();const done=()=>toast('Copied \u2013 paste to Claude');
   if(navigator.clipboard)navigator.clipboard.writeText(t.value).then(done,()=>{document.execCommand('copy');done()});
   else{document.execCommand('copy');done()}}
-function markSynced(){let n=0;['Upper','Lower'].forEach(sp=>DB.history[sp].forEach(s=>{if(s.src==='app'&&!s.synced){s.synced=true;n++}}));
+function markSynced(){let n=0;SPLITS.forEach(sp=>DB.history[sp].forEach(s=>{if(s.src==='app'&&!s.synced){s.synced=true;n++}}));
   saveDB();renderBackup();toast(n+' marked synced')}
 function exportBackup(){const blob=new Blob([JSON.stringify(DB)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gym-backup-'+today()+'.json';a.click();
@@ -737,14 +735,14 @@ function exportBackup(){const blob=new Blob([JSON.stringify(DB)],{type:'applicat
 function importBackup(file){if(!file)return;const r=new FileReader();
   r.onload=()=>{try{const d=JSON.parse(r.result);mergeImport(d)}catch(e){toast('Could not read file')}};r.readAsText(file)}
 function mergeImport(d){
-  if(d.history){let added=0;['Upper','Lower'].forEach(sp=>{(d.history[sp]||[]).forEach(s=>{
+  if(d.history){let added=0;SPLITS.forEach(sp=>{(d.history[sp]||[]).forEach(s=>{
     if(!DB.history[sp].some(x=>x.date===s.date&&x.exercises.length===s.exercises.length)){DB.history[sp].push(s);added++}});
     DB.history[sp].sort((a,b)=>a.date<b.date?1:-1);});
     if(d.bodyweight)d.bodyweight.forEach(b=>{if(!DB.bodyweight.some(x=>x.date===b.date&&x.kg===b.kg))DB.bodyweight.push(b)});
     DB.bodyweight.sort((a,b)=>a.date<b.date?-1:1);
     if(d.routines)d.routines.forEach(r=>{if(!DB.routines.some(x=>x.id===r.id||(x.name===r.name&&x.split===r.split)))DB.routines.push(r)});
     if(d.settings)DB.settings=Object.assign({restDefault:120,restAuto:true,restByExercise:{}},DB.settings||{},d.settings);
-    if(d.hidden)['Upper','Lower'].forEach(sp=>{(d.hidden[sp]||[]).forEach(n=>{DB.hidden[sp]=DB.hidden[sp]||[];if(DB.hidden[sp].indexOf(n)<0)DB.hidden[sp].push(n)})});
+    if(d.hidden)SPLITS.forEach(sp=>{(d.hidden[sp]||[]).forEach(n=>{DB.hidden[sp]=DB.hidden[sp]||[];if(DB.hidden[sp].indexOf(n)<0)DB.hidden[sp].push(n)})});
     saveDB();renderBackup();toast('Imported '+added+' new sessions')}
   else toast('Not a valid backup')}
 function resetAll(){askConfirm('Reset wipes app-logged sessions and reloads the spreadsheet seed. Export a backup first! Continue?',()=>{
